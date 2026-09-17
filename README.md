@@ -196,6 +196,31 @@ official clients do. Credential headers are redacted from debug logs.
 `Provider` and `Middleware` are small interfaces, so metrics, caching, rate
 limiting, or an alternative backend can be plugged in without touching call
 sites. `Client.Models` lists the account's models through `GET /v1/models`.
+To reach Jev through Vercel AI Gateway instead, see the next section.
+
+## Vercel AI Gateway
+
+Jev is also served by [Vercel AI Gateway](https://vercel.com/ai-gateway/models/jev)
+as `typesafe-ai/jev`, in the AI SDK's evaluation-model dialect rather than
+TypeSafe's. `WithVercelAIGateway` switches the wire format; questions,
+answers, batches, errors, and retries are unchanged.
+
+```go
+client, err := jev.New(jev.WithVercelAIGateway()) // reads AI_GATEWAY_API_KEY
+```
+
+| Option | Environment | Default with the gateway |
+| --- | --- | --- |
+| `WithAPIKey` | `AI_GATEWAY_API_KEY` | required |
+| `WithBaseURL` | | `https://ai-gateway.vercel.sh/v4/ai` |
+| `WithModel` | | `typesafe-ai/jev` (`TYPESAFE_DEFAULT_MODEL` is not read; gateway ids differ) |
+
+Noul questions travel as the gateway's `boolean` kind and come back as
+`NoulAnswer`. Choice and score confidence is read from the gateway's
+`providerMetadata.typesafe.confidence`. `Batch.Extra` fields are sent as
+top-level request fields, which is where `providerOptions` goes.
+`RequestID` is the `x-vercel-id` header. `Client.Models` is not available
+through the gateway (`ErrNoModelList`).
 
 ## Testing
 

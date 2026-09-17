@@ -130,7 +130,7 @@ func newAPIError(res result) *APIError {
 		Endpoint:   res.method + " " + res.url,
 		Header:     res.header,
 		Body:       res.body,
-		RequestID:  res.header.Get(requestIDHeader),
+		RequestID:  res.header.Get(res.reqIDHeader),
 		RetryAfter: parseRetryAfter(res.header, time.Now()),
 		Attempts:   res.attempts,
 	}
@@ -315,7 +315,7 @@ func newResponseError(res result, path string, err error) *ResponseError {
 		Path:      path,
 		Header:    res.header,
 		Body:      res.body,
-		RequestID: res.header.Get(requestIDHeader),
+		RequestID: res.header.Get(res.reqIDHeader),
 		Attempts:  res.attempts,
 		Err:       err,
 	}
