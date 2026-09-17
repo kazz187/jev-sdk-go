@@ -60,6 +60,12 @@
 // options win over the environment, which wins over the defaults. Defaults
 // for timeouts, retries, and headers match the official TypeSafe SDKs.
 //
+// # Vercel AI Gateway
+//
+// [WithVercelAIGateway] sends the same questions to Jev through Vercel AI
+// Gateway (model "typesafe-ai/jev", key from AI_GATEWAY_API_KEY). Only the
+// wire format changes; answers and errors are the same types.
+//
 // # Testing
 //
 // Package [github.com/kazz187/jev-sdk-go/jevtest] provides a rule-based

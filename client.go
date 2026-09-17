@@ -51,6 +51,7 @@ type config struct {
 	logger     *slog.Logger
 	provider   Provider
 	middleware []Middleware
+	vercel     bool
 }
 
 // Option configures a [Client]. Options apply in order, last wins.
@@ -159,11 +160,17 @@ func New(opts ...Option) (*Client, error) {
 			opt(&cfg)
 		}
 	}
-	if cfg.model == "" {
+	switch {
+	case cfg.model != "":
+	case cfg.vercel:
+		// Gateway model ids ("typesafe-ai/jev") differ from TypeSafe's, so
+		// TYPESAFE_DEFAULT_MODEL is deliberately not consulted here.
+		cfg.model = DefaultVercelAIGatewayModel
+	default:
 		cfg.model = env(EnvDefaultModel)
-	}
-	if cfg.model == "" {
-		cfg.model = DefaultModel
+		if cfg.model == "" {
+			cfg.model = DefaultModel
+		}
 	}
 
 	base := cfg.provider
@@ -184,15 +191,30 @@ func New(opts ...Option) (*Client, error) {
 }
 
 func (cfg *config) buildHTTPProvider() (*httpProvider, error) {
+	var w wire = typesafeWire{}
+	if cfg.vercel {
+		w = vercelWire{}
+	}
 	key := cfg.apiKey
 	if !cfg.apiKeySet {
-		key = env(EnvAPIKey)
+		if cfg.vercel {
+			key = env(EnvVercelAIGatewayAPIKey)
+		} else {
+			key = env(EnvAPIKey)
+		}
 	}
 	if key == "" {
+		if cfg.vercel {
+			return nil, fmt.Errorf("%w (Vercel AI Gateway reads %s instead)", ErrNoAPIKey, EnvVercelAIGatewayAPIKey)
+		}
 		return nil, ErrNoAPIKey
 	}
 	if cfg.baseURL == "" {
-		cfg.baseURL = env(EnvBaseURL)
+		if cfg.vercel {
+			cfg.baseURL = DefaultVercelAIGatewayBaseURL
+		} else {
+			cfg.baseURL = env(EnvBaseURL)
+		}
 	}
 	if cfg.baseURL == "" {
 		cfg.baseURL = DefaultBaseURL
@@ -233,6 +255,7 @@ func (cfg *config) buildHTTPProvider() (*httpProvider, error) {
 		timeout:   cfg.timeout,
 		retry:     retry,
 		logger:    logger,
+		wire:      w,
 	}, nil
 }
 
