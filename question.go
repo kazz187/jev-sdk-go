@@ -1,6 +1,7 @@
 package jev
 
 import (
+	"encoding/json/jsontext"
 	json "encoding/json/v2"
 	"fmt"
 	"maps"
@@ -49,8 +50,8 @@ type Spec struct {
 	// Instructions is optional, as in the official SDKs: a choice or score
 	// whose criteria say everything can leave it nil.
 	Instructions Content `json:"instructions,omitzero"`
-	// Criteria is *NoulCriteria for a noul, map[string]Content for a choice
-	// (a nil description is sent as null), and []Content for a score.
+	// Criteria is *NoulCriteria for a noul, [ChoiceCriteria] for a choice (a
+	// nil description is sent as null), and []Content for a score.
 	Criteria any `json:"criteria,omitzero"`
 	// Extra carries question fields this package does not model. They are
 	// marshaled alongside the modeled fields; "type", "instructions", and
@@ -58,10 +59,45 @@ type Spec struct {
 	Extra map[string]any `json:",embed"`
 }
 
-// ChoiceOptions returns the option names of a choice, sorted, or nil for
-// other kinds.
+// ChoiceCriterion is one option of a choice as it is sent: its name and
+// description.
+type ChoiceCriterion struct {
+	Name        string
+	Description Content
+}
+
+// ChoiceCriteria is the criteria of a choice, in the order the options were
+// declared. It encodes as a JSON object whose keys keep that order, which a
+// map cannot do, so the model reads the options as they were written.
+type ChoiceCriteria []ChoiceCriterion
+
+// MarshalJSONTo implements [json.MarshalerTo].
+func (c ChoiceCriteria) MarshalJSONTo(enc *jsontext.Encoder) error {
+	if err := enc.WriteToken(jsontext.BeginObject); err != nil {
+		return err
+	}
+	for _, o := range c {
+		if err := enc.WriteToken(jsontext.String(o.Name)); err != nil {
+			return err
+		}
+		if err := json.MarshalEncode(enc, o.Description); err != nil {
+			return err
+		}
+	}
+	return enc.WriteToken(jsontext.EndObject)
+}
+
+// ChoiceOptions returns the option names of a choice, or nil for other
+// kinds. Names come in declared order for [ChoiceCriteria] and sorted for a
+// map, such as the criteria of a Spec decoded from JSON.
 func (s Spec) ChoiceOptions() []string {
 	switch c := s.Criteria.(type) {
+	case ChoiceCriteria:
+		names := make([]string, len(c))
+		for i, o := range c {
+			names[i] = o.Name
+		}
+		return names
 	case map[string]Content:
 		return slices.Sorted(maps.Keys(c))
 	case map[string]string:
@@ -224,22 +260,24 @@ func (q choiceQ[T]) spec() (Spec, error) {
 	if len(q.options) == 0 {
 		return Spec{}, invalid("choice %q has no options", Text(q.instructions))
 	}
-	criteria := make(map[string]Content, len(q.options))
+	criteria := make(ChoiceCriteria, 0, len(q.options))
+	seen := make(map[string]bool, len(q.options))
 	for _, o := range q.options {
 		name := string(o.Value)
 		if strings.TrimSpace(name) == "" {
 			return Spec{}, invalid("choice %q has an empty option", Text(q.instructions))
 		}
-		if _, dup := criteria[name]; dup {
+		if seen[name] {
 			return Spec{}, invalid("choice %q has duplicate option %q", Text(q.instructions), name)
 		}
+		seen[name] = true
 		// An option left undescribed is null on the wire; "" would read as a
 		// description that happens to be empty.
-		if s, ok := o.Description.(string); ok && s == "" {
-			criteria[name] = nil
-			continue
+		description := o.Description
+		if s, ok := description.(string); ok && s == "" {
+			description = nil
 		}
-		criteria[name] = o.Description
+		criteria = append(criteria, ChoiceCriterion{Name: name, Description: description})
 	}
 	return Spec{Type: KindChoice, Instructions: q.instructions, Criteria: criteria}, nil
 }
@@ -263,9 +301,12 @@ func (q choiceQ[T]) decode(raw RawAnswer) (ChoiceAnswer[T], error) {
 		return zero, malformed("choice answer %q is not one of the options", *raw.Choice)
 	}
 	for name, p := range raw.Probabilities {
+		// A name that is not an option cannot be expressed as T. It is left
+		// out rather than failing the answer; the raw answer in
+		// [Response.Answers] still carries it.
 		v, ok := valid[name]
 		if !ok {
-			return zero, malformed("probability for unknown option %q", name)
+			continue
 		}
 		if !isProbability(p) {
 			return zero, malformed("invalid probability %v for option %q", p, name)
@@ -308,9 +349,10 @@ func (q scoreQ) decode(raw RawAnswer) (ScoreAnswer, error) {
 	}
 	probs := make([]float64, n)
 	for key, p := range raw.Probabilities {
+		// Keys that name no level are left out, as for a choice.
 		i, err := strconv.Atoi(key)
 		if err != nil || i < 0 || i >= n {
-			return ScoreAnswer{}, malformed("probability for unknown level %q", key)
+			continue
 		}
 		if !isProbability(p) {
 			return ScoreAnswer{}, malformed("invalid probability %v for level %q", p, key)

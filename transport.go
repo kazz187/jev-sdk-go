@@ -325,7 +325,13 @@ func readBody(body io.ReadCloser) ([]byte, error) {
 // The dialect's own headers are added afterwards by the wire.
 func (p *httpProvider) setHeaders(req *http.Request, hasBody bool) {
 	maps.Copy(req.Header, p.headers)
-	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	if p.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	} else {
+		// WithoutAPIKey: Authorization stays protected, so WithHeader cannot
+		// set it either.
+		req.Header.Del("Authorization")
+	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", p.userAgent)
 	if hasBody {

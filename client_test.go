@@ -30,6 +30,16 @@ func TestAPIKeyResolution(t *testing.T) {
 	if _, err := jev.New(jev.WithProvider(jev.ProviderFunc(nil))); err != nil {
 		t.Errorf("a provider needs no key: %v", err)
 	}
+	t.Setenv(jev.EnvAPIKey, "")
+	if _, err := jev.New(jev.WithoutAPIKey()); err != nil {
+		t.Errorf("WithoutAPIKey: %v", err)
+	}
+	if _, err := jev.New(jev.WithoutAPIKey(), jev.WithAPIKey("")); !errors.Is(err, jev.ErrNoAPIKey) {
+		t.Errorf("a later WithAPIKey must replace WithoutAPIKey: %v", err)
+	}
+	if _, err := jev.New(jev.WithoutAPIKey(), jev.WithVercelAIGateway()); !errors.Is(err, jev.ErrInvalidConfig) {
+		t.Errorf("WithoutAPIKey with the gateway: %v", err)
+	}
 }
 
 func TestEnvironmentFallbacks(t *testing.T) {

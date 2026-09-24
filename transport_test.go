@@ -95,6 +95,40 @@ func TestHTTPRequestAndResponse(t *testing.T) {
 	}
 }
 
+func TestWithoutAPIKeySendsNoAuthorization(t *testing.T) {
+	t.Setenv(jev.EnvAPIKey, "sk-from-env")
+	var (
+		mu     sync.Mutex
+		header http.Header
+		body   []byte
+	)
+	srv := httptest.NewTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		header = r.Header.Clone()
+		body, _ = io.ReadAll(r.Body)
+		io.WriteString(w, `{"model":"tensai","answers":{"q":{"type":"choice","choice":"sales","probabilities":{"sales":1}}}}`)
+	}))
+	client, err := jev.New(jev.WithBaseURL("http://localhost:8080"), jev.WithoutAPIKey(),
+		jev.WithHTTPClient(srv.Client()), jev.WithHeader("Authorization", "Bearer smuggled"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := client.Ask(t.Context(), "s", jev.OneOf("?", "technical", "sales", "billing"))
+	if err != nil || a.Value != "sales" {
+		t.Fatalf("Ask() = %+v, %v", a, err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if _, ok := header["Authorization"]; ok {
+		t.Errorf("Authorization = %q, want none", header.Get("Authorization"))
+	}
+	// Options reach the server in the order they were declared.
+	if !strings.Contains(string(body), `"criteria":{"technical":null,"sales":null,"billing":null}`) {
+		t.Errorf("body = %s", body)
+	}
+}
+
 func TestRetriesOverloadedThenSucceeds(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var calls atomic.Int32

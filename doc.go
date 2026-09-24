@@ -59,6 +59,7 @@
 // and TYPESAFE_LOG_LEVEL when the matching option is not given. Explicit
 // options win over the environment, which wins over the defaults. Defaults
 // for timeouts, retries, and headers match the official TypeSafe SDKs.
+// [WithoutAPIKey] reaches Jev-compatible servers that take no key.
 //
 // # Vercel AI Gateway
 //

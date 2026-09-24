@@ -64,7 +64,7 @@ func TestWireFormat(t *testing.T) {
 		`"anger":{"type":"score","criteria":["Calm",{"level":"Annoyed"},"Furious"]},` +
 		`"raw":{"type":"rank","instructions":"Rank these","beam":4},` +
 		`"spam":{"type":"noul","instructions":"Is this spam?","criteria":{"true":"advertising","false":{"kind":"genuine"}}},` +
-		`"team":{"type":"choice","instructions":"Which team?","criteria":{"billing":"money","other":null,"technical":null}}` +
+		`"team":{"type":"choice","instructions":"Which team?","criteria":{"billing":"money","technical":null,"other":null}}` +
 		`},"trace":true}`
 	if got := wire(t, got); got != want {
 		t.Errorf("wire format\n got: %s\nwant: %s", got, want)
@@ -169,7 +169,7 @@ func TestMalformedAnswersFailOnlyTheirHandle(t *testing.T) {
 		"wrong kind": {Type: jev.KindScore, Score: new(1.0)},
 		"bad option": {Type: jev.KindChoice, Choice: new("nope"), Probabilities: map[string]float64{"billing": 1}},
 		"bad prob":   {Type: jev.KindChoice, Choice: new("billing"), Probabilities: map[string]float64{"billing": 1.5}},
-		"bad level":  {Type: jev.KindScore, Score: new(0.5), Probabilities: map[string]float64{"7": 1}},
+		"bad level":  {Type: jev.KindScore, Score: new(0.5), Probabilities: map[string]float64{"1": -0.1}},
 		"range":      {Type: jev.KindScore, Score: new(9.0), Probabilities: map[string]float64{"0": 1}},
 		"no noul":    {Type: jev.KindNoul},
 	})
@@ -208,6 +208,33 @@ func TestMalformedAnswersFailOnlyTheirHandle(t *testing.T) {
 		if err := get(); !errors.Is(err, jev.ErrMalformedAnswer) {
 			t.Errorf("%s: Get() = %v", name, err)
 		}
+	}
+}
+
+func TestUnknownProbabilitiesAreLeftOut(t *testing.T) {
+	client, _ := capture(t, map[string]jev.RawAnswer{
+		"team": {Type: jev.KindChoice, Choice: new("billing"), Confidence: new(0.7),
+			Probabilities: map[string]float64{"billing": 0.8, "other": 0.1, "abstain": 0.1}},
+		"anger": {Type: jev.KindScore, Score: new(0.5),
+			Probabilities: map[string]float64{"0": 0.5, "1": 0.5, "7": 0.2, "high": 0.1}},
+	})
+	b := client.Batch("s")
+	team := b.Add("team", jev.OneOf("?", Billing, Other))
+	anger := b.Add("anger", jev.Score("?", "calm", "angry"))
+	resp, err := b.Run(t.Context())
+	if err != nil {
+		t.Fatalf("Run() = %v, want unknown keys to be tolerated", err)
+	}
+	tm, err := team.Get()
+	if err != nil || tm.Value != Billing || len(tm.Probs) != 2 || tm.Probs[Billing] != 0.8 || tm.Probs[Other] != 0.1 {
+		t.Errorf("team = %+v, %v", tm, err)
+	}
+	if a, err := anger.Get(); err != nil || !equal(a.Probs, []float64{0.5, 0.5}) {
+		t.Errorf("anger = %+v, %v", a, err)
+	}
+	// The raw answer keeps what the typed one leaves out.
+	if resp.Answers["team"].Probabilities["abstain"] != 0.1 || resp.Answers["anger"].Probabilities["7"] != 0.2 {
+		t.Errorf("raw answers = %+v", resp.Answers)
 	}
 }
 
@@ -290,5 +317,26 @@ func TestSpecInspection(t *testing.T) {
 	// Content is an alias of any, so decoded criteria are still readable.
 	if got := spec.ChoiceOptions(); !equal(got, []string{"a", "b"}) {
 		t.Errorf("ChoiceOptions = %v", got)
+	}
+}
+
+func TestChoiceKeepsDeclaredOrder(t *testing.T) {
+	client, got := capture(t, map[string]jev.RawAnswer{
+		"q": {Type: jev.KindChoice, Choice: new("other"), Probabilities: map[string]float64{"other": 1}},
+	})
+	if _, err := client.Ask(t.Context(), "s", jev.OneOf("?", Technical, Other, Billing)); err != nil {
+		t.Fatal(err)
+	}
+	spec := got.Questions["q"]
+	if names := spec.ChoiceOptions(); !equal(names, []string{"technical", "other", "billing"}) {
+		t.Errorf("ChoiceOptions = %v", names)
+	}
+	if b := wire(t, spec.Criteria); b != `{"technical":null,"other":null,"billing":null}` {
+		t.Errorf("criteria = %s", b)
+	}
+	// A description may itself be structured; its own keys are encoded as usual.
+	criteria := jev.ChoiceCriteria{{Name: "z", Description: map[string]any{"b": 1, "a": 2}}, {Name: "a"}}
+	if b := wire(t, criteria); b != `{"z":{"a":2,"b":1},"a":null}` {
+		t.Errorf("structured criteria = %s", b)
 	}
 }
