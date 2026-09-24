@@ -344,7 +344,7 @@ func (q scoreQ) decode(raw RawAnswer) (ScoreAnswer, error) {
 		return ScoreAnswer{}, malformed("expected a %s answer, got %q", KindScore, raw.Type)
 	}
 	n := len(q.levels)
-	if raw.Score == nil || raw.Score != raw.Score || *raw.Score < 0 || *raw.Score > float64(n-1) {
+	if raw.Score == nil || *raw.Score != *raw.Score || *raw.Score < 0 || *raw.Score > float64(n-1) {
 		return ScoreAnswer{}, malformed("score answer is missing or outside 0..%d", n-1)
 	}
 	probs := make([]float64, n)

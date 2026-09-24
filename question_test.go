@@ -5,6 +5,7 @@ import (
 	"encoding/json/jsontext"
 	json "encoding/json/v2"
 	"errors"
+	"math"
 	"strings"
 	"testing"
 
@@ -171,6 +172,7 @@ func TestMalformedAnswersFailOnlyTheirHandle(t *testing.T) {
 		"bad prob":   {Type: jev.KindChoice, Choice: new("billing"), Probabilities: map[string]float64{"billing": 1.5}},
 		"bad level":  {Type: jev.KindScore, Score: new(0.5), Probabilities: map[string]float64{"1": -0.1}},
 		"range":      {Type: jev.KindScore, Score: new(9.0), Probabilities: map[string]float64{"0": 1}},
+		"nan score":  {Type: jev.KindScore, Score: new(math.NaN()), Probabilities: map[string]float64{"0": 1}},
 		"no noul":    {Type: jev.KindNoul},
 	})
 	b := client.Batch("s")
@@ -182,6 +184,7 @@ func TestMalformedAnswersFailOnlyTheirHandle(t *testing.T) {
 	wrongKind := b.Add("wrong kind", jev.Noul("?"))
 	badLevel := b.Add("bad level", jev.Score("?", "a", "b"))
 	outOfRange := b.Add("range", jev.Score("?", "a", "b"))
+	nanScore := b.Add("nan score", jev.Score("?", "a", "b"))
 	noNoul := b.Add("no noul", jev.Noul("?"))
 	missing := b.Add("missing", jev.Noul("?"))
 
@@ -189,7 +192,7 @@ func TestMalformedAnswersFailOnlyTheirHandle(t *testing.T) {
 	if !errors.Is(err, jev.ErrMalformedAnswer) {
 		t.Fatalf("Run() = %v, want ErrMalformedAnswer", err)
 	}
-	if resp == nil || len(resp.Answers) != 7 {
+	if resp == nil || len(resp.Answers) != 8 {
 		t.Fatalf("response should still be returned, got %+v", resp)
 	}
 	if a, err := ok.Get(); err != nil || a.P != 0.2 {
@@ -202,7 +205,7 @@ func TestMalformedAnswersFailOnlyTheirHandle(t *testing.T) {
 	}
 	for name, get := range map[string]func() error{
 		"wrong kind": func() error { return errOf(wrongKind) }, "bad level": func() error { return errOf(badLevel) },
-		"range": func() error { return errOf(outOfRange) }, "no noul": func() error { return errOf(noNoul) },
+		"range": func() error { return errOf(outOfRange) }, "nan score": func() error { return errOf(nanScore) }, "no noul": func() error { return errOf(noNoul) },
 		"missing": func() error { return errOf(missing) },
 	} {
 		if err := get(); !errors.Is(err, jev.ErrMalformedAnswer) {
