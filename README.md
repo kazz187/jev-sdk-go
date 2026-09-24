@@ -79,6 +79,12 @@ thresholds are policy and live in your code.
 a calibrated probability that the answer is right; use `Probs[Value]` or `P`
 for that.
 
+Choice options reach the model in the order you declare them. `Probs` covers
+exactly your options and score levels: a probability the API reports under
+any other key is left out of the typed answer and kept in `resp.Answers`,
+so a new field on the API side does not break a working question. A choice
+that names an option you never offered is still an error.
+
 Instructions, option descriptions, score levels, and noul criteria are all
 `jev.Content`: a string, or anything that encodes as a JSON object or array.
 Reach for structure when a sentence keeps failing to separate two options.
@@ -176,6 +182,7 @@ defaults, the same precedence as the official SDKs.
 | Option | Environment | Default |
 | --- | --- | --- |
 | `WithAPIKey` | `TYPESAFE_API_KEY` | required |
+| `WithoutAPIKey` | | |
 | `WithBaseURL` | `TYPESAFE_BASE_URL` | `https://api.typesafe.ai` |
 | `WithModel` | `TYPESAFE_DEFAULT_MODEL` | `jev-latest` |
 | `WithLogger` | `TYPESAFE_LOG_LEVEL` | no logging |
@@ -188,6 +195,15 @@ Once `WithAPIKey` is given, `TYPESAFE_API_KEY` is not read at all, so an
 empty key is `ErrNoAPIKey` rather than a silent fall back. The
 `*http.Client` you pass is never modified; per-attempt timeouts go through
 the request context.
+
+A Jev-compatible server that takes no key, such as a local
+[tensai](https://github.com/mattn/tensai), needs the explicit opt-out.
+`WithoutAPIKey` sends no `Authorization` header and ignores
+`TYPESAFE_API_KEY`:
+
+```go
+client, err := jev.New(jev.WithBaseURL("http://localhost:8080"), jev.WithoutAPIKey())
+```
 
 Every request carries `User-Agent`, `X-TypeSafe-SDK`, and
 `X-TypeSafe-Runtime`, and retries carry `X-TypeSafe-Retry-Count`, as the

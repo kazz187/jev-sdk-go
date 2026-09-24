@@ -49,6 +49,8 @@ type ChoiceAnswer[T ~string] struct {
 	// Value is the most probable option.
 	Value T
 	// Probs holds a probability for every option, including zero ones.
+	// Probabilities the API reports for names that are not options are left
+	// out; the raw answer in [Response.Answers] keeps them.
 	Probs map[T]float64
 	// Confidence is the API's own field: how peaked the distribution is,
 	// from 0 to 1. It is not a calibrated probability that the answer is
@@ -80,7 +82,8 @@ type ScoreAnswer struct {
 	// Value runs from 0 (the first level) to len(Levels)-1. It is the
 	// probability-weighted position, so it usually falls between levels.
 	Value float64
-	// Probs holds one probability per level, lowest level first.
+	// Probs holds one probability per level, lowest level first. Keys the
+	// API reports that name no level are left out, as for a choice.
 	Probs []float64
 	// Levels are the level descriptions from the question, in order.
 	Levels []Content

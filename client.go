@@ -41,6 +41,7 @@ type Client struct {
 type config struct {
 	apiKey     string
 	apiKeySet  bool
+	noAPIKey   bool
 	baseURL    string
 	model      string
 	userAgent  string
@@ -60,8 +61,21 @@ type Option func(*config)
 // WithAPIKey sets the API key. Once it is given, TYPESAFE_API_KEY is not
 // read at all, so an empty key is [ErrNoAPIKey] rather than a silent fall
 // back to whatever the environment holds. This is what the official SDKs do.
+// To talk to a server that takes no key, use [WithoutAPIKey].
 func WithAPIKey(key string) Option {
-	return func(c *config) { c.apiKey, c.apiKeySet = strings.TrimSpace(key), true }
+	return func(c *config) { c.apiKey, c.apiKeySet, c.noAPIKey = strings.TrimSpace(key), true, false }
+}
+
+// WithoutAPIKey sends requests with no Authorization header and does not
+// read TYPESAFE_API_KEY, for Jev-compatible servers that need no key, such
+// as a local `tensai serve`:
+//
+//	jev.New(jev.WithBaseURL("http://localhost:8080"), jev.WithoutAPIKey())
+//
+// It is an explicit opt-out, so a missing key stays [ErrNoAPIKey] everywhere
+// else. Vercel AI Gateway always needs a key and rejects this option.
+func WithoutAPIKey() Option {
+	return func(c *config) { c.apiKey, c.apiKeySet, c.noAPIKey = "", true, true }
 }
 
 // WithBaseURL sets the API root, for proxies and tests. It must be an http
@@ -203,7 +217,11 @@ func (cfg *config) buildHTTPProvider() (*httpProvider, error) {
 			key = env(EnvAPIKey)
 		}
 	}
-	if key == "" {
+	switch {
+	case cfg.noAPIKey && cfg.vercel:
+		return nil, fmt.Errorf("%w: Vercel AI Gateway needs an API key; WithoutAPIKey cannot be used with it", ErrInvalidConfig)
+	case cfg.noAPIKey:
+	case key == "":
 		if cfg.vercel {
 			return nil, fmt.Errorf("%w (Vercel AI Gateway reads %s instead)", ErrNoAPIKey, EnvVercelAIGatewayAPIKey)
 		}
